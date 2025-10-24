@@ -1,0 +1,93 @@
+trigger_verificar_vaga_aberta: a regra é que vagas fechadas não podem receber novas inscrições. Tem como ação INSERT na tabela Inscricoes. Momento será BEFORE;
+
+CREATE OR REPLACE FUNCTION verificar_vaga_aberta()
+RETURNS TRIGGER AS $$
+DECLARE
+    vaga_status VARCHAR(50);
+BEGIN
+    SELECT status INTO vaga_status FROM Vagas WHERE vaga_id = NEW.vaga_id;
+
+    IF vaga_status <> 'Aberta' THEN
+        RAISE EXCEPTION 'Nao e possivel se inscrever na vaga ID % porque ela nao esta aberta.', NEW.vaga_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_verificar_vaga_aberta
+BEFORE INSERT ON Inscricoes
+FOR EACH ROW
+EXECUTE FUNCTION verificar_vaga_aberta();
+
+
+------------------------------------
+
+trigger_impedir_reabertura_vaga: a regra envolver não permitir alterar o status de uma vaga para “Aberta” se ela já estiver fechada ou arquivada. Tem como ação UPDATE na tabela Vagas. Momento será BEFORE;
+
+CREATE OR REPLACE FUNCTION impedir_reabertura_vaga()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.status IN ('Fechada', 'Arquivada') AND NEW.status = 'Aberta' THEN
+        RAISE EXCEPTION 'Nao e permitido reabrir uma vaga que ja foi fechada ou arquivada.';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER trigger_impedir_reabertura_vaga
+BEFORE UPDATE ON Vagas
+FOR EACH ROW
+WHEN (OLD.status IS DISTINCT FROM NEW.status)
+EXECUTE FUNCTION impedir_reabertura_vaga();
+
+------------------------------------------------
+
+trigger_historico_inscricoes: a regra é que ao deletar uma vaga, as inscrições relacionadas devem ser movidas para um log de histórico, e para isso, será criado mais uma tabela para onde esses logs serão movidos. Tem como ação DELETE na tabela Vagas. Momento será AFTER;
+
+CREATE TABLE IF NOT EXISTS InscricoesHistorico (
+    log_id SERIAL PRIMARY KEY,
+    inscricao_id INT,
+    candidato_id INT,
+    vaga_id INT,
+    data_inscricao TIMESTAMP,
+    status VARCHAR(50),
+    data_delecao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE OR REPLACE FUNCTION registrar_historico_inscricoes()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO InscricoesHistorico (inscricao_id, candidato_id, vaga_id, data_inscricao, status)
+    SELECT inscricao_id, candidato_id, vaga_id, data_inscricao, status FROM Inscricoes WHERE vaga_id = OLD.vaga_id;
+    DELETE FROM Inscricoes WHERE vaga_id = OLD.vaga_id;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER trigger_historico_inscricoes
+BEFORE DELETE ON Vagas
+FOR EACH ROW
+EXECUTE FUNCTION registrar_historico_inscricoes();
+
+-------------------------------------------------
+
+trigger_impedir_delecao_candidato: a regra envolver não permitir deletar um candidato que tenha inscrições ativas (Em Análise ou Aprovado). Tem como ação DELETE na tabela Candidatos. Momento será INSTEAD OF;
+
+CREATE OR REPLACE FUNCTION impedir_delecao_candidato_com_inscricoes()
+RETURNS TRIGGER AS $$
+DECLARE
+    tem_inscricoes_ativas BOOLEAN;
+BEGIN
+    SELECT verificar_candidato_ativo(OLD.candidato_id) INTO tem_inscricoes_ativas;
+
+    IF tem_inscricoes_ativas THEN
+        RAISE EXCEPTION 'Nao e possivel deletar o candidato ID % porque ele possui inscricoes ativas.', OLD.candidato_id;
+    END IF;
+
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_impedir_delecao_candidato
+BEFORE DELETE ON Candidatos
+FOR EACH ROW
+EXECUTE FUNCTION impedir_delecao_candidato_com_inscricoes();

@@ -1,0 +1,124 @@
+Função contar_inscricoes_vaga: tem como objetivo retornar o número total de inscrições para uma vaga específica. Seu tipo de retorno é simples e recebe como argumento o ID da vaga;
+
+CREATE OR REPLACE FUNCTION contar_inscricoes_vaga(vaga_id_param INT)
+RETURNS BIGINT AS $$
+DECLARE
+    total_inscricoes BIGINT;
+BEGIN
+    SELECT COUNT(*) INTO total_inscricoes FROM Inscricoes WHERE vaga_id = vaga_id_param;
+    RETURN total_inscricoes;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM contar_inscricoes_vaga(1);
+
+-------------------------------------
+
+Função obter_candidato_por_email: tem como objetivo retornar um registro completo de um candidato com base no seu e-mail. Seu tipo de retorno é complexo e recebe como argumento o e-mail do candidato;
+
+CREATE OR REPLACE FUNCTION obter_candidato_por_email(email_param VARCHAR)
+RETURNS Candidatos AS $$
+DECLARE
+    candidato_rec Candidatos;
+BEGIN
+    SELECT * INTO candidato_rec FROM Candidatos WHERE email = email_param;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Candidato com e-mail % não encontrado.', email_param;
+    END IF;
+    RETURN candidato_rec;
+END;
+$$ LANGUAGE plpgsql;
+
+Exemplo de como pode fazer: SELECT * FROM obter_candidato_por_email('bruno.lima@email.com')
+
+----------------------------------------
+
+Função listar_vagas_abertas: tem como objetivo retornar uma tabela com todas as vagas que estão com o status “Aberta”. Seu tipo de retorno é tabela e não possui nenhum argumento;
+
+CREATE OR REPLACE FUNCTION listar_vagas_abertas()
+RETURNS TABLE (
+    vaga_id INT,
+    titulo VARCHAR(100),
+    descricao TEXT
+) AS $$
+BEGIN
+    RETURN QUERY SELECT v.vaga_id, v.titulo, v.descricao FROM Vagas v WHERE v.status = 'Aberta';
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM listar_vagas_abertas()
+
+-----------------------
+
+Função atualizar_status_inscricao: tem como objetivo atualizar o status de uma inscrição e verificar se o status é válido. Seu tipo de retorno é void e recebe como argumento o ID da inscrição e o novo status. OBS: usa IF-THEN-ELSE para validar o status;
+
+CREATE OR REPLACE FUNCTION atualizar_status_inscricao(inscricao_id_param INT, novo_status_param VARCHAR)
+RETURNS VOID AS $$
+BEGIN
+    IF novo_status_param IN ('Em Analise', 'Aprovado', 'Rejeitado', 'Finalizado') THEN
+        UPDATE Inscricoes SET status = novo_status_param WHERE inscricao_id = inscricao_id_param;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Inscricao com ID % nao encontrada.', inscricao_id_param;
+        END IF;
+    ELSE
+        RAISE EXCEPTION 'Status invalido: %.', novo_status_param;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM atualizar_status_inscricao(3, 'Em Analise')
+Confirme com: SELECT * FROM Inscricoes;
+
+------------------------------------
+
+Função verificar_candidato_ativo: tem como objetivo verificar se um candidato tem alguma inscrição com status “Em Análise”, ou “Aprovado” em vagas abertas. Seu tipo de retorno é simples e recebe como argumento o ID do candidato. OBS: utiliza a função contar_inscricoes_vaga;
+
+Um ponto importante, nosso retorno será apenas t ou f. T de true, ou seja, Ativo. F de false, ou seja, não ativo.
+
+CREATE OR REPLACE FUNCTION verificar_candidato_ativo(candidato_id_param INT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    inscricoes_ativas INT;
+BEGIN
+    SELECT COUNT(*) INTO inscricoes_ativas
+    FROM Inscricoes i
+    JOIN Vagas v ON i.vaga_id = v.vaga_id
+    WHERE i.candidato_id = candidato_id_param
+    AND i.status IN ('Em Analise', 'Aprovado')
+    AND v.status = 'Aberta';
+
+    IF inscricoes_ativas > 0 THEN
+        RETURN TRUE;
+    ELSE
+        RETURN FALSE;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM verificar_candidato_ativo(3)
+
+----------------------------------------
+
+Função registrar_nova_inscricao: tem como objetivo criar uma nova inscrição para um candidato em uma vaga, verificando se a vaga está aberta e se o candidato já se inscreveu. Não possui tipo de retorno e recebe como argumento o ID do candidato e o ID da vaga;
+
+CREATE OR REPLACE FUNCTION registrar_nova_inscricao(candidato_id_param INT, vaga_id_param INT)
+RETURNS VOID AS $$
+DECLARE
+    vaga_status VARCHAR(50);
+    inscricao_existente INT;
+BEGIN
+    SELECT status INTO vaga_status FROM Vagas WHERE vaga_id = vaga_id_param;
+    IF NOT FOUND OR vaga_status <> 'Aberta' THEN
+        RAISE EXCEPTION 'A vaga com ID % não está aberta para novas inscrições.', vaga_id_param;
+    END IF;
+    SELECT COUNT(*) INTO inscricao_existente FROM Inscricoes WHERE candidato_id = candidato_id_param AND vaga_id = vaga_id_param;
+    IF inscricao_existente > 0 THEN
+        RAISE EXCEPTION 'O candidato com ID % já se inscreveu para esta vaga.', candidato_id_param;
+    END IF;
+    INSERT INTO Inscricoes (candidato_id, vaga_id) VALUES (candidato_id_param, vaga_id_param);
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM registrar_nova_inscricao(3, 3);
+
+Para verificar se foi adicionado use: SELECT * FROM Inscricoes WHERE vaga_id = 3;

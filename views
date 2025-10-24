@@ -1,0 +1,88 @@
+View vw_candidatos_por_vaga: tem como objetivo listar o título da vaga, o nome do candidato e o status da inscrição para cada vaga;
+
+CREATE OR REPLACE VIEW vw_candidatos_por_vaga AS
+SELECT
+    v.titulo AS "Titulo da Vaga",
+    c.nome AS "Nome do Candidato",
+    i.status AS "Status da Inscricao",
+    i.data_inscricao AS "Data de Inscricao"
+FROM
+    Vagas v
+JOIN
+    Inscricoes i ON v.vaga_id = i.vaga_id
+JOIN
+Candidatos c ON i.candidato_id = c.candidato_id;
+
+SELECT * FROM vw_candidatos_por_vaga;
+
+--------------------------
+
+View vw_habilidades_candidato: tem como objetivo mostrar as habilidades de cada candidato, facilitando a busca por candidatos com perfis específicos;
+
+CREATE OR REPLACE VIEW visao_habilidades_candidato AS
+SELECT
+    c.nome AS "Nome do Candidato",
+    h.nome_habilidade AS "Habilidade",
+    ch.nivel AS "Nivel de Habilidade"
+FROM
+    Candidatos c
+JOIN
+    CandidatoHabilidades ch ON c.candidato_id = ch.candidato_id
+JOIN
+    Habilidades h ON ch.habilidade_id = h.habilidade_id;
+
+SELECT * FROM visao_habilidades_candidato;
+
+-----------------------------
+
+View vw_resumo_vagas: tem como objetivo oferecer um resumo das vagas, incluindo o número de inscrições e o status de cada uma;
+
+CREATE OR REPLACE VIEW visao_resumo_vagas AS
+SELECT
+    v.titulo AS "Titulo da Vaga",
+    v.status AS "Status da Vaga",
+    COUNT(i.inscricao_id) AS "Total de Inscricoes"
+FROM
+    Vagas v
+LEFT JOIN
+    Inscricoes i ON v.vaga_id = i.vaga_id
+GROUP BY
+    v.vaga_id, v.titulo, v.status;
+
+SELECT * FROM visao_resumo_vagas;
+
+-------------------------------------
+
+View vw_vagas_com_maior_demanda: tem como objetivo apresentar as vagas ordenadas pela quantidade de inscrições, do maior para o menor;
+
+CREATE OR REPLACE VIEW visao_vagas_com_maior_demanda AS
+SELECT
+    v.titulo AS "Titulo da Vaga",
+    COUNT(i.inscricao_id) AS "Total de Inscricoes"
+FROM
+    Vagas v
+JOIN
+    Inscricoes i ON v.vaga_id = i.vaga_id
+GROUP BY
+    v.titulo
+ORDER BY
+    "Total de Inscricoes" DESC;
+
+SELECT * FROM visao_vagas_com_maior_demanda;
+
+-------------------------------------------------
+
+View vw_candidatos_sem_habilidade: tem como objetivo identificar candidatos que ainda não tiveram suas habilidades registradas no sistema;
+
+CREATE OR REPLACE VIEW visao_candidatos_sem_habilidade AS
+SELECT
+    c.nome AS "Nome do Candidato",
+    c.email AS "Email do Candidato"
+FROM
+    Candidatos c
+LEFT JOIN
+    CandidatoHabilidades ch ON c.candidato_id = ch.candidato_id
+WHERE
+    ch.candidato_id IS NULL;
+
+SELECT * FROM visao_candidatos_sem_habilidade;
